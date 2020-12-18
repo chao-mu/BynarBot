@@ -41,9 +41,11 @@ def main():
         if message.content == "!ping":
             await message.channel.send("Pong!")
 
+        session = Session()
+        current_user = find_or_initialize_user(message.author, session)
+
         match_res = re.match(r"^!name-add\s+(.+?)\s*$", message.content)
         if match_res:
-            session = Session()
             name = match_res[1]
             if len(name) > 100:
                 await message.channel.send("Sorry, names can't be over 100 characters")
@@ -55,13 +57,39 @@ def main():
                 return
 
             session.add(BandName(name=name, creator=message.author.name))
+
+            points_gained = 40
+            current_user.experience_points += points_gained
+
+            session.add(current_user)
+
             session.commit()
 
-            await message.channel.send("Name added!")
+            await message.channel.send("<@{}> Your suggested name has been added! You gain {}xp! (total: {}xp)".format(current_user.discord_id, points_gained, current_user.experience_points))
             return
 
+        if message.content == "!name-list":
+            session = Session()
+            await message.channel.send(", ".join(name.name for name in session.query(BandName).all()))
+            return
+
+        if message.content == "!help":
+            find_or_initialize_user(message.author, session)
+            await message.channel.send("<@{}> Read the code, FRIEND https://github.com/chao-mu/BynarBot".format(current_user.discord_id))
+            
 
     client.run(secrets["bot_token"])
+
+def find_or_initialize_user(author, session):
+    stmt = session.query(User).filter(User.discord_id == author.id)
+    if stmt.count() > 0:
+        db_author = stmt.first()
+    else:
+        db_author = User(discord_id=author.id, experience_points=0)
+
+    db_author.name = author.nick
+
+    return db_author
 
 class BandName(Base):
     __tablename__ = "band_names"
@@ -70,6 +98,15 @@ class BandName(Base):
     name = Column(String)
     creator = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+
+    name = Column(String)
+    discord_id = Column(String)
+    experience_points = Column(Integer)
 
 if __name__ == "__main__":
     main()
